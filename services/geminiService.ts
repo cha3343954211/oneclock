@@ -1,6 +1,20 @@
 
 import type { GoogleGenAI as GoogleGenAIType } from "@google/genai";
 import { AIConfig } from "../types";
+import { getLocalWisdom } from "./wisdomPool";
+
+/** 从 'H:MM AM/PM' 格式的字符串中解析小时（0-23） */
+function parseHour(timeString: string): number {
+  return Math.min(23, Math.max(0, parseInt(timeString.split(':')[0], 10) || 0));
+}
+
+/** 判断当前配置是否完全没有可用的 API 密钥 */
+function hasNoApiKey(config?: AIConfig): boolean {
+  if (!config) return !process.env.API_KEY;
+  if (config.apiKey) return false;
+  if (config.provider === 'gemini' && process.env.API_KEY) return false;
+  return true;
+}
 
 // 注意：@google/genai 体积约 253KB，改为动态 import，只在调用 AI 时下载
 let defaultGenAI: GoogleGenAIType | null = null;
@@ -31,9 +45,16 @@ export const generateTimeReflection = async (
     Do not use quotes. Do not add labels like "English:" or "Chinese:".
   `;
 
+  const hour = parseHour(timeString);
+
+  // 无任何 API Key → 直接从本地语句池取，不发网络请求
+  if (hasNoApiKey(config)) {
+    return getLocalWisdom(hour, themeLabel);
+  }
+
   // 1. Handle Custom / OpenAI Compatible / ModelScope
   if (config && config.provider !== 'gemini') {
-    if (!config.apiKey) return "Please enter your API Key in settings.\n请在设置中输入API密钥。";
+    if (!config.apiKey) return getLocalWisdom(hour, themeLabel);
 
     // Create AbortController for timeout
     const controller = new AbortController();
@@ -110,7 +131,7 @@ export const generateTimeReflection = async (
   }
 
   if (!aiClient) {
-    return "Time flows like a river, endless and serene.\n时光如川，静水流深。";
+    return getLocalWisdom(hour, themeLabel);
   }
 
   try {
