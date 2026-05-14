@@ -12,9 +12,6 @@ import {
   Camera,
   CameraOff,
   RefreshCcw,
-  RotateCcw,
-  Play,
-  Pause,
   Timer,
   TimerOff,
   LayoutTemplate,
@@ -41,7 +38,7 @@ interface ControlsProps {
 }
 
 export const Controls: React.FC<ControlsProps> = ({ onGenerateWisdom, onUploadBackground }) => {
-  const { settings, layoutCtx, timer, isGeneratingWisdom, controlsVisible, setControlsVisible } = useSettingsContext();
+  const { settings, layoutCtx, timers, isGeneratingWisdom, controlsVisible, setControlsVisible } = useSettingsContext();
   const { layout, dragSensitivity, setDragSensitivity, resetLayout, setLayerOrder } = layoutCtx;
 
   const {
@@ -210,11 +207,11 @@ export const Controls: React.FC<ControlsProps> = ({ onGenerateWisdom, onUploadBa
               <Quote size={18} />
             </button>
 
-            {/* 计时器开关 */}
+            {/* 添加计时器（最多 6 个） */}
             <button
-              onClick={() => timer.setVisible(!timer.visible)}
-              className={`p-2 transition-all rounded-lg ${timer.visible ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
-              title={timer.visible ? "隐藏计时器" : "显示计时器"}
+              onClick={() => timers.addTimer()}
+              className={`p-2 transition-all rounded-lg ${timers.timers.length > 0 ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-white/50 hover:text-white'}`}
+              title={timers.timers.length >= 6 ? "最多 6 个计时器" : `添加计时器（${timers.timers.length}/6）`}
             >
               <AlarmClock size={18} />
             </button>
@@ -371,102 +368,6 @@ export const Controls: React.FC<ControlsProps> = ({ onGenerateWisdom, onUploadBa
             ))}
           </div>
         </div>
-
-        {/* ── 计时器控制区（timer.visible 时展开） ── */}
-        {timer.visible && (() => {
-          const { mode, status, countdownTarget, setMode, setCountdownTarget, start, pause, reset } = timer;
-          const isRunning = status === 'running';
-          const isFinished = status === 'finished';
-          const isIdle = status === 'idle';
-          const isStopwatch = mode === 'stopwatch';
-          const targetSec = Math.floor(countdownTarget / 1000);
-          const tMins = Math.floor(targetSec / 60);
-          const tSecs = targetSec % 60;
-          const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-          return (
-            <div className="flex flex-col gap-3">
-              <div className="h-[1px] bg-white/10 w-full" />
-              <div className="flex items-center gap-2 text-xs text-white/40 uppercase tracking-wider font-medium">
-                <AlarmClock size={12} />
-                <span>计时器</span>
-                {status !== 'idle' && (
-                  <span className={`ml-auto text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                    isFinished ? 'bg-red-500/20 text-red-300 animate-pulse' :
-                    isRunning  ? 'bg-emerald-500/20 text-emerald-300' :
-                                 'bg-white/10 text-white/50'
-                  }`}>
-                    {isFinished ? '完成' : isRunning ? '▶ 运行中' : '⏸ 已暂停'}
-                  </span>
-                )}
-              </div>
-
-              {/* 模式选择 */}
-              <div className="flex bg-white/5 rounded-xl p-1 gap-1">
-                <button
-                  onClick={() => { if (!isRunning) setMode('stopwatch'); }}
-                  disabled={isRunning}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    isStopwatch ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white/70 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  正计时
-                </button>
-                <button
-                  onClick={() => { if (!isRunning) setMode('countdown'); }}
-                  disabled={isRunning}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    !isStopwatch ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white/70 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  倒计时
-                </button>
-              </div>
-
-              {/* 倒计时目标（仅 idle 时显示） */}
-              {!isStopwatch && isIdle && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-white/40 w-14">目标时长</span>
-                  <input
-                    type="number" min={0} max={99} value={tMins}
-                    onChange={e => setCountdownTarget((clamp(+e.target.value||0,0,99)*60+tSecs)*1000)}
-                    className="w-12 text-center bg-white/10 border border-white/15 rounded text-xs text-white font-mono py-1 focus:outline-none focus:border-white/40"
-                  />
-                  <span className="text-white/30 font-mono">:</span>
-                  <input
-                    type="number" min={0} max={59} value={String(tSecs).padStart(2,'0')}
-                    onChange={e => setCountdownTarget((tMins*60+clamp(+e.target.value||0,0,59))*1000)}
-                    className="w-12 text-center bg-white/10 border border-white/15 rounded text-xs text-white font-mono py-1 focus:outline-none focus:border-white/40"
-                  />
-                  <span className="text-white/30 text-[10px]">分 : 秒</span>
-                </div>
-              )}
-
-              {/* 控制按钮 */}
-              <div className="flex gap-2">
-                <button
-                  onClick={reset}
-                  className="flex-1 py-2 bg-white/8 hover:bg-white/15 text-white/60 hover:text-white rounded-xl flex items-center justify-center gap-1.5 text-xs transition-all"
-                >
-                  <RotateCcw size={13} /> 重置
-                </button>
-                <button
-                  onClick={isRunning ? pause : start}
-                  disabled={isFinished}
-                  className={`flex-2 flex-grow py-2 rounded-xl flex items-center justify-center gap-1.5 text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                    isRunning
-                      ? 'bg-white/10 text-white hover:bg-white/20'
-                      : isFinished
-                        ? 'bg-red-500/20 text-red-300'
-                        : 'bg-white/20 text-white hover:bg-white/30'
-                  }`}
-                >
-                  {isRunning ? <><Pause size={14} />暂停</> : isFinished ? '已完成' : <><Play size={14} />开始</>}
-                </button>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Bottom Row: AI Integration */}
         <div className="flex flex-col gap-3 mt-1">

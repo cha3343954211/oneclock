@@ -1,7 +1,8 @@
-import React, { useState, useRef, lazy, Suspense, useMemo } from 'react';
+import React, { useState, useRef, lazy, Suspense } from 'react';
 import { THEMES } from './constants';
-import { ClockMode, ParticleMode, TimerStatus } from './types';
+import { ClockMode, ParticleMode } from './types';
 import { DigitalClock } from './components/DigitalClock';
+import { TimerDisplay } from './components/TimerDisplay';
 import { Controls } from './components/Controls';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DraggableElement } from './components/DraggableElement';
@@ -10,10 +11,9 @@ import { DateLine } from './components/DateLine';
 import { generateTimeReflection } from './services/geminiService';
 import { useSettings } from './hooks/useSettings';
 import { useLayout } from './hooks/useLayout';
-import { useTimer } from './hooks/useTimer';
+import { useTimers } from './hooks/useTimers';
 import { SettingsProvider } from './contexts/SettingsContext';
-import { DisplayTimeProvider } from './contexts/DisplayTimeContext';
-import { useTime } from './contexts/TimeContext';
+import type { TimerActions } from './components/TimerDisplay';
 
 // 代码分割：仅在需要时加载
 const AnalogClock = lazy(() => import('./components/AnalogClock').then(m => ({ default: m.AnalogClock })));
@@ -26,43 +26,20 @@ const ELEMENT_LABELS: Record<string, string> = {
   dateLine: '日期显示',
 };
 
-/** 将计时器毫秒数转换为 TimeState，用于复用时钟组件显示 */
-function timerToTimeState(ms: number, status: TimerStatus, isCountdown: boolean) {
-  const total = Math.max(0, ms);
-  const hours   = Math.floor(total / 3_600_000);
-  const minutes = Math.floor((total % 3_600_000) / 60_000);
-  const seconds = Math.floor((total % 60_000) / 1_000);
-  const modeLabel = isCountdown ? '倒计时' : '正计时';
-  const statusIcon = status === 'running' ? '▶' : status === 'paused' ? '⏸' : status === 'finished' ? '✓' : '';
-  return {
-    hours, minutes, seconds,
-    period: 'AM' as const,
-    fullDate: `${statusIcon} ${modeLabel}`,
-  };
-}
-
 const App: React.FC = () => {
-  const realTime = useTime();
   const settings = useSettings();
   const layoutCtx = useLayout();
-  const timer = useTimer();
+  const timers = useTimers();
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [wisdom, setWisdom] = useState('');
   const [isGeneratingWisdom, setIsGeneratingWisdom] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
+  // 双击计时器 → 打开 ElementSettings
+  const [activeTimerId, setActiveTimerId] = useState<string | null>(null);
 
   const currentTheme = THEMES[settings.themeId];
   const { layout, dragSensitivity, activeSettingsId, setActiveSettingsId, updateElement } = layoutCtx;
-
-  // 计时器激活时，将计时器时间提供给时钟组件（复用现有时钟元素）
-  const isTimerMode = timer.visible && timer.status !== 'idle';
-  const displayTimeValue = useMemo(() => ({
-    time: isTimerMode
-      ? timerToTimeState(timer.displayMs, timer.status, timer.mode === 'countdown')
-      : realTime,
-    isTimerMode,
-  }), [isTimerMode, timer.displayMs, timer.status, timer.mode, realTime]);
 
   const handleGenerateWisdom = async () => {
     if (isGeneratingWisdom) return;
@@ -123,9 +100,22 @@ const App: React.FC = () => {
 
   const activeElementConfig = activeSettingsId ? layout[activeSettingsId as keyof typeof layout] : null;
 
+  // 为每个计时器绑定 id 的操作集
+  const makeTimerActions = (id: string): TimerActions => ({
+    start:               () => timers.start(id),
+    pause:               () => timers.pause(id),
+    reset:               () => timers.reset(id),
+    finish:              () => timers.finish(id),
+    setMode:             m  => timers.setMode(id, m),
+    setCountdownTarget:  ms => timers.setCountdownTarget(id, ms),
+    updateVisual:        p  => timers.updateVisual(id, p),
+    remove:              () => timers.removeTimer(id),
+  });
+
+  const activeTimerRecord = activeTimerId ? timers.timers.find(t => t.id === activeTimerId) : null;
+
   return (
-    <SettingsProvider value={{ settings, layoutCtx, timer, wisdom, setWisdom, isGeneratingWisdom, setIsGeneratingWisdom, controlsVisible, setControlsVisible }}>
-    <DisplayTimeProvider value={displayTimeValue}>
+    <SettingsProvider value={{ settings, layoutCtx, timers, wisdom, setWisdom, isGeneratingWisdom, setIsGeneratingWisdom, controlsVisible, setControlsVisible }}>
       <div
         ref={containerRef}
         className={`relative w-full h-screen overflow-hidden transition-colors duration-700 ease-in-out flex flex-col items-center justify-center ${currentTheme.bgClass}`}
@@ -193,10 +183,37 @@ const App: React.FC = () => {
           />
         )}
 
+        {/* 计时器列表 - 每个独立可拖拽 */}
+        {timers.timers.map(t => (
+          <DraggableElement
+            key={t.id}
+            id={t.id}
+            config={{ id: t.id, x: t.x, y: t.y, scale: t.scale, rotation: t.rotation, zIndex: t.zIndex, visible: true, opacity: t.opacity, customColor: t.customColor }}
+            onConfigChange={(id, p) => timers.updateVisual(id, p)}
+            onDoubleClick={id => setActiveTimerId(id)}
+            containerRef={containerRef}
+            dragSensitivity={layoutCtx.dragSensitivity}
+          >
+            <TimerDisplay timer={t} actions={makeTimerActions(t.id)} />
+          </DraggableElement>
+        ))}
+
+        {/* ElementSettings 弹窗 - 计时器双击 */}
+        {activeTimerId && activeTimerRecord && (
+          <ElementSettings
+            isOpen
+            elementId={activeTimerId}
+            elementLabel={activeTimerRecord.name}
+            config={{ id: activeTimerId, x: activeTimerRecord.x, y: activeTimerRecord.y, scale: activeTimerRecord.scale, rotation: activeTimerRecord.rotation, zIndex: activeTimerRecord.zIndex, visible: true, opacity: activeTimerRecord.opacity, customColor: activeTimerRecord.customColor }}
+            onConfigChange={p => timers.updateVisual(activeTimerId, p)}
+            onClose={() => setActiveTimerId(null)}
+            onReset={() => timers.updateVisual(activeTimerId, { x: 0, y: 10, scale: 1, rotation: 0, opacity: 1 })}
+          />
+        )}
+
         {/* 设置面板 - 通过 Context 消费，不需要传 props */}
         <Controls onGenerateWisdom={handleGenerateWisdom} onUploadBackground={handleUploadBackground} />
       </div>
-    </DisplayTimeProvider>
     </SettingsProvider>
   );
 };
