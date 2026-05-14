@@ -76,7 +76,7 @@ jobs:
           echo "## ✅ Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**下载 IPA 后，使用 Sideloadly 安装到设备：**" >> $GITHUB_STEP_SUMMARY
-          echo "1. 下载上方 Artifact: \`For Clock-iOS-unsigned.ipa\`" >> $GITHUB_STEP_SUMMARY
+          echo "1. 下载上方 Artifact: \`For-Clock-iOS-unsigned\`" >> $GITHUB_STEP_SUMMARY
           echo "2. 打开 [Sideloadly](https://sideloadly.io) (Windows/Mac 均可)" >> $GITHUB_STEP_SUMMARY
           echo "3. 连接 iPhone/iPad，拖入 IPA，用免费 Apple ID 签名" >> $GITHUB_STEP_SUMMARY
           echo "4. 安装完成后在 设置→通用→VPN与设备管理 信任证书" >> $GITHUB_STEP_SUMMARY
