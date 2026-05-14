@@ -1,0 +1,188 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ── 1. Android ──────────────────────────────────────────────────────────────
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web & sync Capacitor
+        run: npm run build:cap
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Grant Gradle permission
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug \
+            -Dorg.gradle.jvmargs="-Xmx2g" \
+            --no-daemon
+
+      - name: Upload APK artifact (inter-job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
+
+  # ── 2. iOS ──────────────────────────────────────────────────────────────────
+  build-ios:
+    name: Build iOS IPA (Unsigned)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web & sync Capacitor
+        run: npm run build:cap
+
+      - name: Archive iOS app (unsigned)
+        run: |
+          ARCHIVE_PATH="$RUNNER_TEMP/ForClock.xcarchive"
+          xcodebuild archive \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package IPA from archive
+        run: |
+          ARCHIVE_PATH="$RUNNER_TEMP/ForClock.xcarchive"
+          IPA_PATH="$RUNNER_TEMP/ForClock-unsigned.ipa"
+          APP_PATH=$(find "$ARCHIVE_PATH/Products" -name "*.app" | head -1)
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -r "$APP_PATH" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -r "$IPA_PATH" Payload/
+
+      - name: Upload IPA artifact (inter-job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: ${{ runner.temp }}/ForClock-unsigned.ipa
+          retention-days: 1
+
+  # ── 3. Release（等两端都成功后执行）────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [ build-android, build-ios ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ./dist-release
+
+      - name: Download iOS IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-ipa
+          path: ./dist-release
+
+      - name: Rename release files
+        run: |
+          mv ./dist-release/app-debug.apk         ./dist-release/For-Clock-Android.apk
+          mv ./dist-release/ForClock-unsigned.ipa  ./dist-release/For-Clock-iOS-unsigned.ipa
+
+      - name: Delete previous latest-build release
+        run: |
+          gh release delete latest-build --yes 2>/dev/null || true
+          git push origin :refs/tags/latest-build  2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          BUILD_DATE=$(date +'%Y-%m-%d %H:%M UTC')
+          APK_SIZE=$(du -sh ./dist-release/For-Clock-Android.apk | cut -f1)
+          IPA_SIZE=$(du -sh ./dist-release/For-Clock-iOS-unsigned.ipa | cut -f1)
+
+          cat > /tmp/release-notes.md << NOTES
+          ## 🕐 For Clock — 最新自动构建
+
+          **Commit:** \`${SHORT_SHA}\`　**时间:** ${BUILD_DATE}
+
+          ### 📱 Android \`For-Clock-Android.apk\` (${APK_SIZE})
+          1. 下载 APK
+          2. 通过 USB 传到手机，或用微信 / QQ 发送
+          3. 手机开启「允许安装未知来源应用」后直接安装
+
+          ### 🍎 iOS \`For-Clock-iOS-unsigned.ipa\` (${IPA_SIZE})
+          1. 下载 IPA
+          2. 打开 [Sideloadly](https://sideloadly.io)（Windows / Mac 均支持）
+          3. 连接 iPhone / iPad，将 IPA 拖入，用免费 Apple ID 签名并安装
+          4. 安装完成后在「设置 → 通用 → VPN 与设备管理」信任证书
+
+          > 此为 Debug / 未签名构建，仅供测试使用。
+          NOTES
+
+          gh release create latest-build \
+            --title "For Clock · Latest Build" \
+            --notes-file /tmp/release-notes.md \
+            --prerelease \
+            ./dist-release/For-Clock-Android.apk \
+            ./dist-release/For-Clock-iOS-unsigned.ipa
+
+      - name: Build summary
+        run: |
+          echo "## ✅ Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`latest-build\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 平台 | 文件 |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Android | For-Clock-Android.apk |" >> $GITHUB_STEP_SUMMARY
+          echo "| iOS | For-Clock-iOS-unsigned.ipa |" >> $GITHUB_STEP_SUMMARY

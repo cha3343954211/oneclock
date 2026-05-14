@@ -1,9 +1,7 @@
-﻿name: Build Android APK
+﻿name: Build Android APK (Manual)
 
 on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+  workflow_dispatch:  # 仅手动触发，自动构建请看 build-and-release.yml
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
