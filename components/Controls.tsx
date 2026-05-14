@@ -8,14 +8,10 @@ import {
   Palette,
   Image as ImageIcon,
   X,
-  ZoomIn,
-  ZoomOut,
   Snowflake,
   Camera,
   CameraOff,
-  PaintBucket,
   RefreshCcw,
-  Check,
   Timer,
   TimerOff,
   LayoutTemplate,
@@ -30,90 +26,30 @@ import {
   ChevronUp,
   Quote
 } from 'lucide-react';
-import { ThemeId, ClockMode, ParticleMode, AIConfig, AIProvider } from '../types';
-import { THEMES, FONT_OPTIONS, COLOR_PRESETS } from '../constants';
+import { ClockMode, ParticleMode, AIConfig, AIProvider } from '../types';
+import { THEMES, COLOR_PRESETS } from '../constants';
+import { useSettingsContext } from '../contexts/SettingsContext';
 
+/** Controls 现在只需要 2 个外部 props（回调需要在 App 层执行的逻辑） */
 interface ControlsProps {
-  isVisible: boolean;
-  currentThemeId: ThemeId;
-  clockMode: ClockMode;
-  particleMode: ParticleMode;
-  showSeconds: boolean;
-  use24Hour: boolean;
-  customBackground: string | null;
-  dragSensitivity: number;
-  isCameraEnabled: boolean;
-  customColor: string | null;
-  customFont: string | null;
-  isSmooth: boolean;
-  isFlip: boolean;
-  showHourNumbers: boolean;
-  aiConfig: AIConfig;
-  showWisdom: boolean;
-  layout: { digitalClock: { zIndex: number }; analogClock: { zIndex: number }; dateLine: { zIndex: number } };
-  onThemeChange: (id: ThemeId) => void;
-  onModeChange: (mode: ClockMode) => void;
-  onParticleModeChange: (mode: ParticleMode) => void;
-  onToggleSeconds: () => void;
-  onToggle24Hour: () => void;
-  onToggleSmooth: () => void;
-  onToggleFlip: () => void;
-  onToggleHourNumbers: () => void;
   onGenerateWisdom: () => void;
   onUploadBackground: (file: File) => void;
-  onClearBackground: () => void;
-  onToggleCamera: () => void;
-  onColorChange: (color: string) => void;
-  onFontChange: (font: string) => void;
-  onResetStyle: () => void;
-  onAIConfigChange: (config: AIConfig) => void;
-  onToggleWisdom: () => void;
-  onResetLayout: () => void;
-  onDragSensitivityChange: (value: number) => void;
-  onLayerChange: (elementId: string, zIndex: number) => void;
-  isGenerating: boolean;
 }
 
-export const Controls: React.FC<ControlsProps> = ({
-  isVisible,
-  currentThemeId,
-  clockMode,
-  particleMode,
-  isCameraEnabled,
-  customBackground,
-  dragSensitivity,
-  customColor,
-  customFont,
-  showSeconds,
-  isSmooth,
-  isFlip,
-  showHourNumbers,
-  aiConfig,
-  showWisdom,
-  layout,
-  onThemeChange,
-  onModeChange,
-  onParticleModeChange,
-  onToggleSeconds,
-  onToggleSmooth,
-  onToggleFlip,
-  onToggleHourNumbers,
-  onGenerateWisdom,
-  onUploadBackground,
-  onClearBackground,
-  onToggleCamera,
-  onColorChange,
-  onFontChange,
-  onResetStyle,
-  onAIConfigChange,
-  onToggleWisdom,
-  onResetLayout,
-  onDragSensitivityChange,
-  onLayerChange,
-  isGenerating
-}) => {
+export const Controls: React.FC<ControlsProps> = ({ onGenerateWisdom, onUploadBackground }) => {
+  const { settings, layoutCtx, isGeneratingWisdom, controlsVisible, setControlsVisible } = useSettingsContext();
+  const { layout, dragSensitivity, setDragSensitivity, resetLayout, setLayerOrder } = layoutCtx;
+
+  const {
+    themeId, clockMode, particleMode, showSeconds, isSmooth, isFlip,
+    showHourNumbers, isCameraEnabled, customBackground, customColor,
+    showWisdom, aiConfig,
+    setThemeId, setClockMode, setParticleMode,
+    toggleSeconds, toggleSmooth, toggleFlip, toggleHourNumbers,
+    toggleCamera, toggleWisdom, clearBackground, setAiConfig,
+  } = settings;
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const colorInputRef = useRef<HTMLInputElement>(null);
   const [showAISettings, setShowAISettings] = useState(false);
 
   const toggleFullscreen = () => {
@@ -136,44 +72,24 @@ export const Controls: React.FC<ControlsProps> = ({
     }
   };
 
-  const handleColorChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    onColorChange(event.target.value);
-  };
-
   const handleAIConfigChange = (key: keyof AIConfig, value: string) => {
-    onAIConfigChange({
-      ...aiConfig,
-      [key]: value
-    });
+    setAiConfig({ ...aiConfig, [key]: value });
   };
 
   const handleProviderChange = (provider: AIProvider) => {
-    let newBaseUrl = aiConfig.baseUrl;
-    let newModel = aiConfig.model;
-
-    // Set defaults when switching providers
-    if (provider === 'modelscope') {
-      newBaseUrl = 'https://api-inference.modelscope.cn/v1';
-      newModel = 'qwen-turbo';
-    } else if (provider === 'gemini') {
-      newBaseUrl = '';
-      newModel = 'gemini-3-flash-preview';
-    }
-
-    onAIConfigChange({
-      ...aiConfig,
-      provider,
-      baseUrl: newBaseUrl,
-      model: newModel
-    });
+    const defaults: Record<string, { baseUrl: string; model: string }> = {
+      modelscope: { baseUrl: 'https://api-inference.modelscope.cn/v1', model: 'qwen-turbo' },
+      gemini:     { baseUrl: '', model: 'gemini-3-flash-preview' },
+    };
+    const d = defaults[provider] ?? { baseUrl: aiConfig.baseUrl, model: aiConfig.model };
+    setAiConfig({ ...aiConfig, provider, baseUrl: d.baseUrl, model: d.model });
   };
 
   const isCustomHex = customColor && !customColor.includes('gradient') && !COLOR_PRESETS.some(p => p.value === customColor);
 
   return (
     <div
-      className={`fixed top-12 left-1/2 -translate-x-1/2 p-4 flex flex-col items-center justify-start transition-all duration-500 z-50 ${isVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-8 pointer-events-none'
-        }`}
+      className={`fixed top-12 left-1/2 -translate-x-1/2 p-4 flex flex-col items-center justify-start transition-all duration-500 z-50 ${controlsVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-8 pointer-events-none'}`}
     >
       <div className="bg-black/80 backdrop-blur-2xl border border-white/20 rounded-2xl p-5 shadow-[0_10px_50px_rgba(0,0,0,0.6)] flex flex-col gap-4 w-[90vw] max-w-lg transform transition-transform duration-300 max-h-[85vh] overflow-y-auto scrollbar-hide">
 
@@ -181,21 +97,21 @@ export const Controls: React.FC<ControlsProps> = ({
         <div className="flex justify-between items-center w-full">
           <div className="flex gap-2">
             <button
-              onClick={() => onModeChange(ClockMode.DIGITAL)}
+              onClick={() => setClockMode(ClockMode.DIGITAL)}
               className={`p-2.5 rounded-lg transition-all ${clockMode === ClockMode.DIGITAL ? 'bg-white/20 text-white shadow-inner' : 'text-white/50 hover:bg-white/10'}`}
               title="Digital Mode"
             >
               <Type size={18} />
             </button>
             <button
-              onClick={() => onModeChange(ClockMode.ANALOG)}
+              onClick={() => setClockMode(ClockMode.ANALOG)}
               className={`p-2.5 rounded-lg transition-all ${clockMode === ClockMode.ANALOG ? 'bg-white/20 text-white shadow-inner' : 'text-white/50 hover:bg-white/10'}`}
               title="Analog Mode"
             >
               <Clock size={18} />
             </button>
             <button
-              onClick={() => onModeChange(ClockMode.DUAL)}
+              onClick={() => setClockMode(ClockMode.DUAL)}
               className={`p-2.5 rounded-lg transition-all ${clockMode === ClockMode.DUAL ? 'bg-white/20 text-white shadow-inner' : 'text-white/50 hover:bg-white/10'}`}
               title="Dual Mode"
             >
@@ -207,7 +123,7 @@ export const Controls: React.FC<ControlsProps> = ({
             {/* Smooth Toggle (Analog/Dual) */}
             {(clockMode === ClockMode.ANALOG || clockMode === ClockMode.DUAL) && (
               <button
-                onClick={onToggleSmooth}
+                onClick={toggleSmooth}
                 className={`p-2 transition-all rounded-lg ${isSmooth ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
                 title={isSmooth ? "Disable Smooth Sweep" : "Enable Smooth Sweep"}
               >
@@ -218,7 +134,7 @@ export const Controls: React.FC<ControlsProps> = ({
             {/* Hour Numbers Toggle (Analog/Dual) */}
             {(clockMode === ClockMode.ANALOG || clockMode === ClockMode.DUAL) && (
               <button
-                onClick={onToggleHourNumbers}
+                onClick={toggleHourNumbers}
                 className={`p-2 transition-all rounded-lg ${showHourNumbers ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
                 title={showHourNumbers ? "隐藏时刻数字" : "显示时刻数字 (12/3/6/9)"}
               >
@@ -229,7 +145,7 @@ export const Controls: React.FC<ControlsProps> = ({
             {/* Flip Toggle (Digital/Dual) */}
             {(clockMode === ClockMode.DIGITAL || clockMode === ClockMode.DUAL) && (
               <button
-                onClick={onToggleFlip}
+                onClick={toggleFlip}
                 className={`p-2 transition-all rounded-lg ${isFlip ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
                 title={isFlip ? "Disable Flip Animation" : "Enable Flip Animation"}
               >
@@ -239,7 +155,7 @@ export const Controls: React.FC<ControlsProps> = ({
 
             {/* Seconds Toggle */}
             <button
-              onClick={onToggleSeconds}
+              onClick={toggleSeconds}
               className={`p-2 transition-all rounded-lg ${showSeconds ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
               title={showSeconds ? "Hide Seconds" : "Show Seconds"}
             >
@@ -256,7 +172,7 @@ export const Controls: React.FC<ControlsProps> = ({
             />
             {customBackground ? (
               <button
-                onClick={onClearBackground}
+                onClick={clearBackground}
                 className="p-2 text-red-300 hover:text-red-200 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors mr-1"
                 title="Remove Custom Background"
               >
@@ -274,7 +190,7 @@ export const Controls: React.FC<ControlsProps> = ({
 
             {/* Wisdom Toggle */}
             <button
-              onClick={onToggleWisdom}
+              onClick={toggleWisdom}
               className={`p-2 transition-all rounded-lg ${showWisdom ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white'}`}
               title={showWisdom ? "Hide Daily Quote" : "Show Daily Quote"}
             >
@@ -282,7 +198,7 @@ export const Controls: React.FC<ControlsProps> = ({
             </button>
 
             <button
-              onClick={onToggleCamera}
+              onClick={toggleCamera}
               className={`p-2 transition-all rounded-lg ${isCameraEnabled ? 'bg-red-500/20 text-red-200 animate-pulse' : 'text-white/50 hover:text-white'}`}
               title={isCameraEnabled ? "Disable Camera Gestures" : "Enable Camera Gestures"}
             >
@@ -317,7 +233,7 @@ export const Controls: React.FC<ControlsProps> = ({
               max={1}
               step={0.05}
               value={dragSensitivity}
-              onChange={(e) => onDragSensitivityChange(parseFloat(e.target.value))}
+              onChange={(e) => setDragSensitivity(parseFloat(e.target.value))}
               className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-blue-500"
             />
           </div>
@@ -343,9 +259,9 @@ export const Controls: React.FC<ControlsProps> = ({
                           // Move up: swap with the item above
                           if (index > 0) {
                             const aboveItem = arr[index - 1];
-                            onLayerChange(item.id, aboveItem.zIndex + 1);
+                            setLayerOrder(item.id, aboveItem.zIndex + 1);
                           } else {
-                            onLayerChange(item.id, item.zIndex + 1);
+                            setLayerOrder(item.id, item.zIndex + 1);
                           }
                         }}
                         className="p-1 text-white/40 hover:text-white hover:bg-white/10 rounded transition-all"
@@ -357,7 +273,7 @@ export const Controls: React.FC<ControlsProps> = ({
                         onClick={() => {
                           // Move down: decrease zIndex
                           if (item.zIndex > 1) {
-                            onLayerChange(item.id, item.zIndex - 1);
+                            setLayerOrder(item.id, item.zIndex - 1);
                           }
                         }}
                         disabled={item.zIndex <= 1}
@@ -374,7 +290,7 @@ export const Controls: React.FC<ControlsProps> = ({
 
           {/* Reset Button */}
           <button
-            onClick={onResetLayout}
+            onClick={resetLayout}
             className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white rounded-xl flex items-center justify-center gap-2 text-sm transition-all"
           >
             <RefreshCcw size={14} />
@@ -394,8 +310,8 @@ export const Controls: React.FC<ControlsProps> = ({
             {Object.values(THEMES).map((theme) => (
               <button
                 key={theme.id}
-                onClick={() => onThemeChange(theme.id)}
-                className={`px-3 py-1.5 rounded-full text-[11px] whitespace-nowrap transition-all border ${currentThemeId === theme.id
+                onClick={() => setThemeId(theme.id)}
+                className={`px-3 py-1.5 rounded-full text-[11px] whitespace-nowrap transition-all border ${themeId === theme.id
                   ? 'bg-white text-black border-white'
                   : 'bg-transparent text-white/60 border-white/20 hover:border-white/50'
                   }`}
@@ -422,7 +338,7 @@ export const Controls: React.FC<ControlsProps> = ({
             ].map((pm) => (
               <button
                 key={pm.id}
-                onClick={() => onParticleModeChange(pm.id)}
+                onClick={() => setParticleMode(pm.id)}
                 className={`px-3 py-1.5 rounded-full text-[11px] whitespace-nowrap transition-all border ${particleMode === pm.id
                   ? 'bg-blue-500 text-white border-blue-400'
                   : 'bg-transparent text-white/60 border-white/20 hover:border-white/50'
@@ -438,11 +354,11 @@ export const Controls: React.FC<ControlsProps> = ({
         <div className="flex flex-col gap-3 mt-1">
           <button
             onClick={onGenerateWisdom}
-            disabled={isGenerating}
+            disabled={isGeneratingWisdom}
             className="w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:to-pink-400 text-white py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-medium transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed shadow-lg shadow-purple-500/20"
           >
-            <Sparkles size={16} className={isGenerating ? "animate-spin" : ""} />
-            {isGenerating ? "Consulting..." : "Ask AI for Reflection"}
+            <Sparkles size={16} className={isGeneratingWisdom ? "animate-spin" : ""} />
+            {isGeneratingWisdom ? "Consulting..." : "Ask AI for Reflection"}
           </button>
 
           <button
