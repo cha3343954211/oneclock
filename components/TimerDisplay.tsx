@@ -3,9 +3,25 @@ import { Play, Pause, RotateCcw, Timer, AlarmClock, X } from 'lucide-react';
 import { TimerMode } from '../types';
 import { TimerRecord, VisualPatch, calcDisplayMs, formatMs, playAlertTone } from '../hooks/useTimers';
 
+/** 判断是否渐变色 */
+const isGradientColor = (c: string | null) => !!c && c.includes('gradient');
+
+/** 生成渐变文字的 CSS style（backgroundClip: text 技术）*/
+function gradientTextStyle(gradient: string): React.CSSProperties {
+  return {
+    color: 'transparent',
+    backgroundImage: gradient,
+    WebkitBackgroundClip: 'text',
+    backgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+  };
+}
+
 /** customColor 为 null 时，用 rgba(255,255,255,0.X) 降级白色 */
 const tint = (color: string | null, alpha = 1) =>
-  color ? color + (alpha < 1 ? Math.round(alpha * 255).toString(16).padStart(2, '0') : '') : undefined;
+  color && !isGradientColor(color)
+    ? color + (alpha < 1 ? Math.round(alpha * 255).toString(16).padStart(2, '0') : '')
+    : undefined;
 
 // ---- 倒计时输入 ----
 const CountdownInput: React.FC<{
@@ -17,17 +33,19 @@ const CountdownInput: React.FC<{
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-  const borderStyle = accentColor ? { borderColor: accentColor + '60' } : {};
+  // 渐变色无法直接用于 color 属性，input 内部退回白色
+  const solidColor = accentColor && !isGradientColor(accentColor) ? accentColor : null;
+  const borderStyle = solidColor ? { borderColor: solidColor + '60' } : {};
   const inputCls = 'w-12 text-center bg-white/10 border border-white/20 rounded-lg text-white text-lg font-mono focus:outline-none py-1';
   return (
     <div className="flex items-center justify-center gap-1">
       <input type="number" min={0} max={99} value={mins}
         onChange={e => onChange((clamp(parseInt(e.target.value) || 0, 0, 99) * 60 + secs) * 1000)}
-        className={inputCls} style={{ color: accentColor || undefined, ...borderStyle }} />
-      <span className="text-white/50 text-xl font-mono" style={{ color: accentColor || undefined }}>:</span>
+        className={inputCls} style={{ color: solidColor || undefined, ...borderStyle }} />
+      <span className="text-white/50 text-xl font-mono" style={{ color: solidColor || undefined }}>:</span>
       <input type="number" min={0} max={59} value={String(secs).padStart(2, '0')}
         onChange={e => onChange((mins * 60 + clamp(parseInt(e.target.value) || 0, 0, 59)) * 1000)}
-        className={inputCls} style={{ color: accentColor || undefined, ...borderStyle }} />
+        className={inputCls} style={{ color: solidColor || undefined, ...borderStyle }} />
       <span className="text-white/30 text-xs ml-1">分:秒</span>
     </div>
   );
@@ -83,19 +101,26 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({ timer, actions }) =>
 
   const displayMs = calcDisplayMs(timer);
 
-  // 时间显示颜色
+  // 时间显示颜色（支持渐变）
+  const isGradient = isGradientColor(customColor);
   const timeColorStyle: React.CSSProperties = isFinished
     ? {}
     : customColor
-      ? { color: customColor }
+      ? isGradient
+        ? gradientTextStyle(customColor)
+        : { color: customColor }
       : {};
+
+  // 若设置了自定义颜色，不让倒计时警告色覆盖
   const timeColorClass = isFinished
     ? 'text-red-400 animate-pulse'
-    : !isStopwatch && displayMs <= 10_000
-      ? 'text-amber-400'
-      : !isStopwatch && displayMs <= 60_000
-        ? 'text-yellow-200'
-        : customColor ? '' : 'text-white';
+    : customColor
+      ? ''
+      : !isStopwatch && displayMs <= 10_000
+        ? 'text-amber-400'
+        : !isStopwatch && displayMs <= 60_000
+          ? 'text-yellow-200'
+          : 'text-white';
 
   const canSwitchMode = status !== 'running';
 

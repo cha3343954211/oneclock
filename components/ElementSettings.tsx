@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ElementConfig } from '../types';
 import { COLOR_PRESETS } from '../constants';
 
@@ -27,6 +27,13 @@ export const ElementSettings: React.FC<ElementSettingsProps> = ({
             ? config.customColor
             : '#ffffff'
     );
+
+    // 外部 customColor 变更时同步（例如通过预设色选择后，自定义输入框也应更新）
+    useEffect(() => {
+        if (config.customColor && !config.customColor.includes('gradient')) {
+            setCustomHex(config.customColor);
+        }
+    }, [config.customColor]);
 
     if (!isOpen) return null;
 
