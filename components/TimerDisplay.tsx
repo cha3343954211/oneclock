@@ -1,7 +1,8 @@
 ﻿import React, { useReducer, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw, Timer, AlarmClock, X } from 'lucide-react';
-import { TimerMode } from '../types';
-import { TimerRecord, VisualPatch, calcDisplayMs, formatMs, playAlertTone } from '../hooks/useTimers';
+import { TimerMode, WidgetRecord } from '../types';
+import { calcDisplayMs, formatMs, playAlertTone } from '../hooks/useWidgets';
+import { resolveFontFamily } from '../hooks/widgetPresets';
 
 /** 判断是否渐变色 */
 const isGradientColor = (c: string | null) => !!c && c.includes('gradient');
@@ -59,18 +60,18 @@ export interface TimerActions {
   finish: () => void;
   setMode: (mode: TimerMode) => void;
   setCountdownTarget: (ms: number) => void;
-  updateVisual: (patch: VisualPatch) => void;
+  updateVisual: (patch: Partial<WidgetRecord>) => void;
   remove: () => void;
 }
 
 interface TimerDisplayProps {
-  timer: TimerRecord;
+  timer: WidgetRecord;
   actions: TimerActions;
 }
 
 // ---- 主组件 ----
 export const TimerDisplay: React.FC<TimerDisplayProps> = ({ timer, actions }) => {
-  const { mode, status, accumulated, startTs, countdownTarget, customColor, name } = timer;
+  const { mode, status, accumulated, startTs, countdownTarget, customColor, name, fontPreset, stylePreset } = timer;
   const isStopwatch = mode === 'stopwatch';
   const isRunning   = status === 'running';
   const isFinished  = status === 'finished';
@@ -122,6 +123,30 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({ timer, actions }) =>
           ? 'text-yellow-200'
           : 'text-white';
 
+  // 字体预设
+  const fontFam = resolveFontFamily(fontPreset, "'Share Tech Mono', 'Courier New', monospace");
+
+  // 展示风格
+  const displayStyle = stylePreset || 'text';
+  const solidColor = customColor && !isGradient ? customColor : null;
+  const glowBase = solidColor || '#ffffff';
+  const glowStyle: React.CSSProperties = !isGradient
+    ? displayStyle === 'glow'
+      ? { textShadow: `0 0 24px ${glowBase}70, 0 0 48px ${glowBase}38` }
+      : displayStyle === 'neon'
+        ? { textShadow: `0 0 8px ${glowBase}, 0 0 18px ${glowBase}cc, 0 0 36px ${glowBase}88, 0 0 72px ${glowBase}44` }
+        : {}
+    : {};
+
+  const cardWrapStyle: React.CSSProperties = displayStyle === 'card' ? {
+    background:     'rgba(255,255,255,0.06)',
+    backdropFilter: 'blur(14px)',
+    border:         '1px solid rgba(255,255,255,0.10)',
+    boxShadow:      '0 8px 32px rgba(0,0,0,0.30)',
+    borderRadius:   16,
+    padding:        '10px 24px',
+  } : {};
+
   const canSwitchMode = status !== 'running';
 
   return (
@@ -134,17 +159,22 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({ timer, actions }) =>
         </div>
       )}
 
-      {/* ── 主时间显示（与 DigitalClock 同风格）── */}
-      <div
-        className={`font-mono font-bold tracking-tight ${timeColorClass}`}
-        style={{
-          fontSize: 'clamp(2.4rem, 7vw, 5rem)',
-          letterSpacing: '-0.03em',
-          lineHeight: 1,
-          ...timeColorStyle,
-        }}
-      >
-        {isFinished ? '完成!' : formatMs(displayMs, isStopwatch)}
+      {/* ── 主时间显示（字体/样式预设生效）── */}
+      <div style={cardWrapStyle}>
+        <div
+          className={`font-bold tracking-tight ${timeColorClass}`}
+          style={{
+            fontFamily:     fontFam,
+            fontSize:       'clamp(2.4rem, 7vw, 5rem)',
+            letterSpacing:  '-0.03em',
+            lineHeight:     1,
+            fontVariantNumeric: 'tabular-nums',
+            ...timeColorStyle,
+            ...glowStyle,
+          }}
+        >
+          {isFinished ? '完成!' : formatMs(displayMs, isStopwatch)}
+        </div>
       </div>
 
       {/* ── 倒计时进度条（细线，与字体同色）── */}

@@ -71,3 +71,39 @@ export interface LayoutConfig {
   analogClock: ElementConfig;
   dateLine: ElementConfig;
 }
+
+/** 组件类型 */
+export type WidgetType = 'digital' | 'analog' | 'calendar' | 'timer';
+
+/**
+ * 统一组件记录 — 同时满足 ElementConfig（位置/视觉）和 TimerRecord（计时状态）
+ * 的超集，可直接传入 DraggableElement / TimerDisplay / ElementSettings。
+ */
+export interface WidgetRecord {
+  id: string;
+  type: WidgetType;
+  name: string;
+  // Layout — 与 ElementConfig 字段完全一致
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  zIndex: number;
+  visible: boolean;
+  opacity: number;
+  customColor: string | null;
+  // Timer state — 始终存在，仅 type==='timer' 时有意义
+  mode: TimerMode;
+  status: TimerStatus;
+  accumulated: number;   // 上次暂停前已累计 ms
+  startTs: number;       // 最近一次 start 的 Date.now()
+  countdownTarget: number;
+  // 样式预设（可选，未设时跟随全局）
+  fontPreset?: string;        // digital/timer: 字体预设 key
+  stylePreset?: string;       // digital/timer: 展示风格 | analog: 表盘风格 | calendar: 布局风格
+  // Analog 专属（未设时 = undefined，App 层回退到全局设置）
+  isSmooth?: boolean;
+  showHourNumbers?: boolean;
+  // Digital 专属
+  showDate?: boolean;
+}

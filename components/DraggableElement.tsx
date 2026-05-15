@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ElementConfig } from '../types';
 
 interface DraggableElementProps {
@@ -28,6 +28,13 @@ export const DraggableElement: React.FC<DraggableElementProps> = ({
     const initialPinchAngle = useRef(0);
     const initialScale = useRef(1);
     const initialRotation = useRef(0);
+
+    // Stable refs for wheel handler — avoids stale closure in high-frequency events
+    const elementRef = useRef<HTMLDivElement>(null);
+    const scaleRef = useRef(config.scale);
+    const cbRef   = useRef(onConfigChange);
+    useEffect(() => { scaleRef.current = config.scale; }, [config.scale]);
+    useEffect(() => { cbRef.current   = onConfigChange; }, [onConfigChange]);
 
     // Calculate distance between two touch points
     const getTouchDistance = (touches: TouchList) => {
@@ -113,7 +120,7 @@ export const DraggableElement: React.FC<DraggableElementProps> = ({
             if (initialPinchDistance.current > 0) {
                 // Calculate new scale
                 const scaleRatio = currentDistance / initialPinchDistance.current;
-                const newScale = Math.max(0.2, Math.min(3, initialScale.current * scaleRatio));
+                const newScale = Math.max(0.05, Math.min(50, initialScale.current * scaleRatio));
 
                 // Calculate new rotation
                 let angleDelta = currentAngle - initialPinchAngle.current;
@@ -165,6 +172,28 @@ export const DraggableElement: React.FC<DraggableElementProps> = ({
         onDoubleClick(id);
     }, [id, onDoubleClick]);
 
+    // ── 滚轮无极缩放（非 passive，直接操作 ref 避免闭包过期）──
+    const handleWheel = useCallback((e: WheelEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // 统一为像素单位
+        let delta = e.deltaY;
+        if (e.deltaMode === 1) delta *= 16;   // lines
+        if (e.deltaMode === 2) delta *= 400;  // pages
+        // 指数平滑：每 100px ≈ ×0.905 / ÷0.905
+        const factor   = Math.pow(0.999, delta);
+        const newScale = Math.max(0.05, Math.min(50, scaleRef.current * factor));
+        scaleRef.current = newScale; // 立即更新，避免快速滚动时值滞后
+        cbRef.current(id, { scale: newScale });
+    }, [id]);
+
+    useEffect(() => {
+        const el = elementRef.current;
+        if (!el) return;
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => el.removeEventListener('wheel', handleWheel);
+    }, [handleWheel]);
+
     // Add global event listeners for drag and pinch
     React.useEffect(() => {
         if (isDragging || isPinching) {
@@ -189,6 +218,7 @@ export const DraggableElement: React.FC<DraggableElementProps> = ({
 
     return (
         <div
+            ref={elementRef}
             className={`absolute ${(isDragging || isPinching) ? 'cursor-grabbing' : 'cursor-grab'}`}
             style={{
                 left: `calc(50% + ${config.x}vw)`,

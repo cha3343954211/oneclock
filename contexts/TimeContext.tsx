@@ -28,31 +28,43 @@ interface TimeProviderProps {
 
 export const TimeProvider: React.FC<TimeProviderProps> = ({ children, interval = 1000 }) => {
   const [time, setTime] = useState<TimeState>(() => buildTimeState(new Date()));
-  const timerRef = useRef<number | null>(null);
 
   const tick = useCallback(() => {
     setTime(buildTimeState(new Date()));
   }, []);
 
   useEffect(() => {
-    // 立即对齐到下一秒的起点，减少误差
-    const now = new Date();
-    const msToNextSecond = 1000 - now.getMilliseconds();
+    let timerId: number;
 
-    const startTimer = () => {
-      timerRef.current = window.setInterval(tick, interval);
+    /**
+     * 自校正调度：每次计算距下一秒边界的剩余毫秒数再 setTimeout，
+     * 彻底消除 setInterval 的累积漂移。
+     */
+    const schedule = () => {
+      const delay = interval - (Date.now() % interval);
+      timerId = window.setTimeout(() => {
+        tick();
+        schedule();
+      }, delay);
     };
 
-    const alignTimer = window.setTimeout(() => {
-      tick();
-      startTimer();
-    }, msToNextSecond);
+    // 立即同步一次，再启动自校正链
+    tick();
+    schedule();
+
+    /** 标签页从后台恢复时立即补一次 tick 并重新对齐 */
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        tick();
+        window.clearTimeout(timerId);
+        schedule();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
-      window.clearTimeout(alignTimer);
-      if (timerRef.current !== null) {
-        window.clearInterval(timerRef.current);
-      }
+      window.clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [tick, interval]);
 

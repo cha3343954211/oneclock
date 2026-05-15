@@ -10,6 +10,7 @@ interface AnalogClockProps {
   customFont: string | null;
   isSmooth?: boolean;
   showHourNumbers?: boolean;
+  faceStyle?: string;  // 'classic' | 'minimal' | 'dots' | 'modern' | 'swiss'
 }
 
 export const AnalogClock: React.FC<AnalogClockProps> = ({
@@ -18,7 +19,8 @@ export const AnalogClock: React.FC<AnalogClockProps> = ({
   customColor,
   customFont,
   isSmooth = false,
-  showHourNumbers = false
+  showHourNumbers = false,
+  faceStyle = 'classic',
 }) => {
   const time = useTime();
   const [internalAngles, setInternalAngles] = useState({ h: 0, m: 0, s: 0 });
@@ -115,6 +117,16 @@ export const AnalogClock: React.FC<AnalogClockProps> = ({
     { num: '9', x: 14, y: 52 },
   ];
 
+  const sc  = getStrokeColor(theme.textClass);
+  const acc = getStrokeColor(theme.accentClass);
+  const trans = !isSmooth;
+
+  // Arc helper for 'modern' style (progress arc from 12 to current hour)
+  const hourFrac = (hourDegrees % 360) / 360;
+  const arcR = 42;
+  const arcC = 2 * Math.PI * arcR;
+  const arcLen = hourFrac * arcC;
+
   return (
     <div
       className={`relative w-[60vmin] h-[60vmin] max-w-[600px] max-h-[600px] ${!customFont ? theme.fontFamily : ''}`}
@@ -123,11 +135,7 @@ export const AnalogClock: React.FC<AnalogClockProps> = ({
       <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-xl">
         <defs>
           {isGradient && activePreset?.svgStops && (
-            <linearGradient
-              id={gradientId}
-              x1="0" y1="0" x2="100" y2="0"
-              gradientUnits="userSpaceOnUse"
-            >
+            <linearGradient id={gradientId} x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
               {activePreset.svgStops.map((stop, i) => (
                 <stop key={i} offset={stop.offset} stopColor={stop.color} />
               ))}
@@ -135,100 +143,125 @@ export const AnalogClock: React.FC<AnalogClockProps> = ({
           )}
         </defs>
 
-        {/* Clock Face Background */}
-        <circle
-          cx="50"
-          cy="50"
-          r="48"
-          fill="none"
-          stroke={getStrokeColor(theme.textClass)}
-          strokeWidth="0.5"
-          className={`${!customColor ? theme.textClass : ''} opacity-20`}
-        />
+        {/* ── FACE ─────────────────────────────────────────────── */}
 
-        {/* Hour Markers */}
-        {[...Array(12)].map((_, i) => (
-          <line
-            key={i}
-            x1="50"
-            y1="6"
-            x2="50"
-            y2={showHourNumbers && i % 3 === 0 ? "8" : "12"}
+        {/* classic / dots / swiss: outer ring */}
+        {(faceStyle === 'classic' || faceStyle === 'dots' || faceStyle === 'swiss') && (
+          <circle cx="50" cy="50" r="48" fill="none" stroke={sc}
+            strokeWidth="0.5" opacity={0.25}
+            className={!customColor ? theme.textClass : ''} />
+        )}
+
+        {/* classic: line markers */}
+        {faceStyle === 'classic' && [...Array(12)].map((_, i) => (
+          <line key={i} x1="50" y1="6"
+            x2="50" y2={showHourNumbers && i % 3 === 0 ? '8' : '12'}
             transform={`rotate(${i * 30} 50 50)`}
-            stroke={getStrokeColor(theme.textClass)}
-            strokeWidth={i % 3 === 0 ? "1.5" : "0.5"}
-            strokeLinecap="round"
-            className={`${(!customColor && !isGradient) ? theme.textClass : ''}`}
-          />
+            stroke={sc} strokeWidth={i % 3 === 0 ? '1.5' : '0.6'} strokeLinecap="round"
+            className={!customColor && !isGradient ? theme.textClass : ''} />
         ))}
 
-        {/* Hour Numbers (12, 3, 6, 9) */}
-        {showHourNumbers && hourNumbers.map(({ num, x, y }) => (
-          <text
-            key={num}
-            x={x}
-            y={y}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fill={getStrokeColor(theme.textClass)}
-            className={`${(!customColor && !isGradient) ? theme.textClass : ''} text-[8px] font-medium`}
-            style={{ fontSize: '8px' }}
-          >
+        {/* classic: hour numbers */}
+        {faceStyle === 'classic' && showHourNumbers && hourNumbers.map(({ num, x, y }) => (
+          <text key={num} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
+            fill={sc} style={{ fontSize: '8px' }}
+            className={!customColor && !isGradient ? theme.textClass : ''}>
             {num}
           </text>
         ))}
 
-        {/* Hour Hand */}
-        <line
-          x1="50"
-          y1="50"
-          x2="50"
-          y2="25"
-          stroke={getStrokeColor(theme.textClass)}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          transform={`rotate(${hourDegrees} 50 50)`}
-          // Remove transition when smooth to avoid lag, keep it for tick mode
-          className={`${(!customColor && !isGradient) ? theme.textClass : ''} ${!isSmooth ? 'transition-transform duration-300 ease-linear' : ''}`}
-        />
+        {/* dots: circular dot markers */}
+        {faceStyle === 'dots' && [...Array(60)].map((_, i) => {
+          const isH = i % 5 === 0;
+          const r   = isH ? 1.4 : 0.65;
+          const d   = 44; // distance from center
+          const rad = (i * 6 - 90) * Math.PI / 180;
+          return (
+            <circle key={i}
+              cx={50 + d * Math.cos(rad)} cy={50 + d * Math.sin(rad)} r={r}
+              fill={sc} opacity={isH ? 0.85 : 0.35}
+              className={!customColor && !isGradient ? theme.textClass : ''} />
+          );
+        })}
 
-        {/* Minute Hand */}
-        <line
-          x1="50"
-          y1="50"
-          x2="50"
-          y2="15"
-          stroke={getStrokeColor(theme.textClass)}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          transform={`rotate(${minuteDegrees} 50 50)`}
-          className={`${(!customColor && !isGradient) ? theme.textClass : ''} ${!isSmooth ? 'transition-transform duration-300 ease-linear' : ''}`}
-        />
-
-        {/* Second Hand */}
-        {showSeconds && (
-          <line
-            x1="50"
-            y1="50"
-            x2="50"
-            y2="10"
-            stroke={getStrokeColor(theme.accentClass)}
-            strokeWidth="0.5"
-            strokeLinecap="round"
-            transform={`rotate(${secondDegrees} 50 50)`}
-            className={`${(!customColor && !isGradient) ? theme.accentClass : ''} ${!isSmooth ? 'transition-transform duration-75 ease-linear' : ''} ${isNeon ? 'drop-shadow-[0_0_5px_rgba(34,211,238,1)]' : ''}`}
-          />
+        {/* modern: hour progress arc */}
+        {faceStyle === 'modern' && (
+          <>
+            {/* track */}
+            <circle cx="50" cy="50" r={arcR} fill="none" stroke={sc}
+              strokeWidth="2.5" opacity={0.12} strokeLinecap="round" />
+            {/* progress */}
+            <circle cx="50" cy="50" r={arcR} fill="none" stroke={sc}
+              strokeWidth="2.5" opacity={0.75} strokeLinecap="round"
+              strokeDasharray={arcC} strokeDashoffset={arcC - arcLen}
+              transform="rotate(-90 50 50)"
+              className={!customColor && !isGradient ? theme.textClass : ''} />
+          </>
         )}
 
-        {/* Center Dot */}
-        <circle
-          cx="50"
-          cy="50"
-          r="1.5"
-          className={(!customColor && !isGradient) ? theme.textClass : ''}
-          fill={getStrokeColor(theme.textClass)}
-          stroke="none"
-        />
+        {/* swiss: rectangular markers */}
+        {faceStyle === 'swiss' && [...Array(60)].map((_, i) => {
+          const isH = i % 5 === 0;
+          const w   = isH ? 1.8 : 0.8;
+          const h   = isH ? 7   : 3.5;
+          const y0  = 3;
+          return (
+            <rect key={i}
+              x={50 - w / 2} y={y0} width={w} height={h}
+              fill={sc} opacity={isH ? 0.9 : 0.45}
+              transform={`rotate(${i * 6} 50 50)`}
+              className={!customColor && !isGradient ? theme.textClass : ''} />
+          );
+        })}
+
+        {/* ── HANDS ────────────────────────────────────────────── */}
+
+        {/* Hour hand */}
+        {faceStyle === 'swiss' ? (
+          <rect x="48.2" y="22" width="3.6" height="28" rx="1.8"
+            fill={sc} transform={`rotate(${hourDegrees} 50 50)`}
+            className={`${!customColor && !isGradient ? theme.textClass : ''} ${trans ? 'transition-transform duration-300 ease-linear' : ''}`} />
+        ) : (
+          <line x1="50" y1="50" x2="50" y2={faceStyle === 'modern' ? '24' : '25'}
+            stroke={sc} strokeWidth={faceStyle === 'modern' ? '3' : '2.5'} strokeLinecap="round"
+            transform={`rotate(${hourDegrees} 50 50)`}
+            className={`${!customColor && !isGradient ? theme.textClass : ''} ${trans ? 'transition-transform duration-300 ease-linear' : ''}`} />
+        )}
+
+        {/* Minute hand */}
+        {faceStyle === 'swiss' ? (
+          <rect x="48.8" y="12" width="2.4" height="38" rx="1.2"
+            fill={sc} transform={`rotate(${minuteDegrees} 50 50)`}
+            className={`${!customColor && !isGradient ? theme.textClass : ''} ${trans ? 'transition-transform duration-300 ease-linear' : ''}`} />
+        ) : (
+          <line x1="50" y1="50" x2="50" y2={faceStyle === 'modern' ? '15' : '15'}
+            stroke={sc} strokeWidth={faceStyle === 'modern' ? '2' : '1.5'} strokeLinecap="round"
+            transform={`rotate(${minuteDegrees} 50 50)`}
+            className={`${!customColor && !isGradient ? theme.textClass : ''} ${trans ? 'transition-transform duration-300 ease-linear' : ''}`} />
+        )}
+
+        {/* Second hand */}
+        {showSeconds && faceStyle !== 'modern' && (
+          faceStyle === 'swiss' ? (
+            // Swiss: thin stick + red circle tip
+            <g transform={`rotate(${secondDegrees} 50 50)`}
+               className={trans ? 'transition-transform duration-75 ease-linear' : ''}>
+              <line x1="50" y1="58" x2="50" y2="12" stroke="#ef4444" strokeWidth="0.7" strokeLinecap="round" />
+              <circle cx="50" cy="12" r="2.5" fill="#ef4444" />
+              <circle cx="50" cy="50" r="2" fill="#ef4444" />
+            </g>
+          ) : (
+            <line x1="50" y1="55" x2="50" y2="10"
+              stroke={acc} strokeWidth="0.6" strokeLinecap="round"
+              transform={`rotate(${secondDegrees} 50 50)`}
+              className={`${!customColor && !isGradient ? theme.accentClass : ''} ${trans ? 'transition-transform duration-75 ease-linear' : ''} ${isNeon ? 'drop-shadow-[0_0_5px_rgba(34,211,238,1)]' : ''}`} />
+          )
+        )}
+
+        {/* Center dot */}
+        <circle cx="50" cy="50" r={faceStyle === 'swiss' ? 2.5 : 1.5}
+          fill={faceStyle === 'swiss' ? '#ef4444' : sc} stroke="none"
+          className={!customColor && !isGradient && faceStyle !== 'swiss' ? theme.textClass : ''} />
       </svg>
     </div>
   );
