@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, pro ]
   workflow_dispatch:
 
 env:
@@ -133,10 +133,24 @@ jobs:
           mv ./dist-release/app-debug.apk         ./dist-release/For-Clock-Android.apk
           mv ./dist-release/ForClock-unsigned.ipa  ./dist-release/For-Clock-iOS-unsigned.ipa
 
-      - name: Delete previous latest-build release
+      - name: Determine release tag
+        id: meta
         run: |
-          gh release delete latest-build --yes 2>/dev/null || true
-          git push origin :refs/tags/latest-build  2>/dev/null || true
+          BRANCH="${GITHUB_REF_NAME}"
+          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+            TAG="latest-build"
+            TITLE="For Clock · Latest Build"
+          else
+            TAG="latest-build-${BRANCH}"
+            TITLE="For Clock · Latest Build (${BRANCH})"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+
+      - name: Delete previous release
+        run: |
+          gh release delete "${{ steps.meta.outputs.tag }}" --yes 2>/dev/null || true
+          git push origin :"refs/tags/${{ steps.meta.outputs.tag }}" 2>/dev/null || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -151,7 +165,7 @@ jobs:
           IPA_SIZE=$(du -sh ./dist-release/For-Clock-iOS-unsigned.ipa | cut -f1)
 
           cat > /tmp/release-notes.md << NOTES
-          ## 🕐 For Clock — 最新自动构建
+          ## 🕐 For Clock — 最新自动构建 (${GITHUB_REF_NAME})
 
           **Commit:** \`${SHORT_SHA}\`　**时间:** ${BUILD_DATE}
 
@@ -169,8 +183,8 @@ jobs:
           > 此为 Debug / 未签名构建，仅供测试使用。
           NOTES
 
-          gh release create latest-build \
-            --title "For Clock · Latest Build" \
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --title "${{ steps.meta.outputs.title }}" \
             --notes-file /tmp/release-notes.md \
             --prerelease \
             ./dist-release/For-Clock-Android.apk \

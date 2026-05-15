@@ -2,7 +2,7 @@
 
 const config: CapacitorConfig = {
   appId: 'com.forclock.app',
-  appName: 'For Clock',
+  appName: 'For Clock Pro',
   webDir: 'dist',
   android: {
     // Allow WebView to use camera
