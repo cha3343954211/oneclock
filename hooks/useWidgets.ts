@@ -57,36 +57,80 @@ function makeWidget(type: WidgetType, existingCount: number): WidgetRecord {
 // ---- 美观默认排版（按类型，坐标单位 vw/vh，原点=屏幕中心）----
 // x: calc(50% + x vw),  y: calc(50% + y vh)
 
-export const DEFAULT_LAYOUT: Record<WidgetType, Array<{ x: number; y: number; scale: number }>> = {
+type LayoutSlot = { x: number; y: number; scale: number };
+type LayoutMap  = Record<WidgetType, LayoutSlot[]>;
+
+// 横屏 / 桌面：左右分区
+const LANDSCAPE_LAYOUT: LayoutMap = {
   digital:  [
-    { x:  18,  y: 0,  scale: 1.0  },  // 右中（主角）
-    { x: -22,  y: -20, scale: 0.72 },  // 左上
-    { x:   0,  y: -15, scale: 0.85 },  // 中上
+    { x:  18,  y:  0,   scale: 1.0  },  // 右中（主角）
+    { x: -22,  y: -20,  scale: 0.72 },  // 左上
+    { x:   0,  y: -15,  scale: 0.85 },  // 中上
   ],
   analog:   [
-    { x: -22,  y: 0,  scale: 0.85 },  // 左中
-    { x:  20,  y: 18, scale: 0.9  },  // 右下
-    { x:   0,  y: 30, scale: 0.75 },  // 底部中
+    { x: -22,  y:  0,   scale: 0.85 },  // 左中
+    { x:  20,  y:  18,  scale: 0.9  },  // 右下
+    { x:   0,  y:  30,  scale: 0.75 },  // 底部中
   ],
   calendar: [
-    { x:  18,  y: 16, scale: 0.88 },  // 数字钟下方
-    { x:  24,  y: 5,  scale: 0.9  },  // 右侧
-    { x: -24,  y: 5,  scale: 0.9  },  // 左侧
+    { x:  18,  y:  16,  scale: 0.88 },  // 数字钟下方
+    { x:  24,  y:   5,  scale: 0.9  },  // 右侧
+    { x: -24,  y:   5,  scale: 0.9  },  // 左侧
   ],
   timer:    [
-    { x:  28,  y: -12, scale: 0.9  },  // 右上
-    { x:  28,  y: 2,  scale: 0.82 },  // 右中
-    { x:  28,  y: 15, scale: 0.75 },  // 右下
-    { x: -28,  y: -12, scale: 0.9  },  // 左上
+    { x:  28,  y: -12,  scale: 0.9  },  // 右上
+    { x:  28,  y:   2,  scale: 0.82 },  // 右中
+    { x:  28,  y:  15,  scale: 0.75 },  // 右下
+    { x: -28,  y: -12,  scale: 0.9  },  // 左上
   ],
 };
+
+// 竖屏 / 手机：上下分层（窄屏避免横向重叠）
+const PORTRAIT_LAYOUT: LayoutMap = {
+  digital:  [
+    { x:  0,  y: -22,  scale: 0.82 },  // 上方主角（含日期）
+    { x:  0,  y:  -5,  scale: 0.58 },  // 中上 mini
+    { x:  0,  y:  32,  scale: 0.58 },  // 下方 mini
+  ],
+  analog:   [
+    { x:  0,  y:  18,  scale: 0.95 },  // 下方主角
+    { x: -22, y: -28,  scale: 0.55 },  // 左上小
+    { x:  22, y: -28,  scale: 0.55 },  // 右上小
+  ],
+  calendar: [
+    { x:  0,  y:  -5,  scale: 0.85 },  // 数字钟与表盘之间
+    { x:  0,  y:  36,  scale: 0.78 },  // 底部
+    { x:  0,  y: -36,  scale: 0.78 },  // 顶部
+  ],
+  timer:    [
+    { x: -22, y: -30,  scale: 0.7  },  // 左上
+    { x:  22, y: -30,  scale: 0.7  },  // 右上
+    { x: -22, y:  36,  scale: 0.7  },  // 左下
+    { x:  22, y:  36,  scale: 0.7  },  // 右下
+  ],
+};
+
+/** 判断当前是否为竖屏（仅在浏览器环境调用）*/
+function isPortrait(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.innerHeight > window.innerWidth;
+}
+
+/** 按当前屏幕方向取布局 */
+export function getCurrentLayout(): LayoutMap {
+  return isPortrait() ? PORTRAIT_LAYOUT : LANDSCAPE_LAYOUT;
+}
+
+// 兼容旧代码：导出仍以横屏布局为名
+export const DEFAULT_LAYOUT: LayoutMap = LANDSCAPE_LAYOUT;
 
 // ---- 默认初始组件 ----
 
 function getDefaults(): WidgetRecord[] {
+  const L = getCurrentLayout();
   return [
-    { ...makeWidget('analog',   0), id: 'w_analog_0',   ...DEFAULT_LAYOUT.analog[0],   zIndex: 5 },
-    { ...makeWidget('digital',  1), id: 'w_digital_0',  ...DEFAULT_LAYOUT.digital[0],  zIndex: 10, showDate: true },
+    { ...makeWidget('analog',   0), id: 'w_analog_0',   ...L.analog[0],   zIndex: 5 },
+    { ...makeWidget('digital',  1), id: 'w_digital_0',  ...L.digital[0],  zIndex: 10, showDate: true },
   ];
 }
 
@@ -236,11 +280,12 @@ export function useWidgets(): UseWidgetsReturn {
 
   const resetPositions = useCallback(() => {
     setWidgets(prev => {
+      const L = getCurrentLayout();
       const seen: Partial<Record<WidgetType, number>> = {};
       const next = prev.map(w => {
         const idx    = seen[w.type] ?? 0;
         seen[w.type] = idx + 1;
-        const slots  = DEFAULT_LAYOUT[w.type];
+        const slots  = L[w.type];
         const slot   = slots[Math.min(idx, slots.length - 1)];
         return { ...w, x: slot.x, y: slot.y, scale: slot.scale, rotation: 0, opacity: 1 };
       });
